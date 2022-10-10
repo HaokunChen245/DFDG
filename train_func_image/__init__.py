@@ -1,0 +1,3 @@
+from train_func_image.train_func_imgs_single_teacher import train_one_setting_single_teacher
+from train_func_image.train_func_imgs_multi_teacher import train_one_setting_multi_teacher
+

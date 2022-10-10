@@ -1,0 +1,13 @@
+models*
+*saved*
+*log*
+.ipynb_checkpoints
+*backup*
+
+__pycache__/
+*.py[cod]
+*$py.class
+aws*
+data/
+teacher_models/
+bash*/
