@@ -1,3 +1,55 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
+from dfdg.datasets.datasets import PACS
+from dfdg.datasets.datasets import VLCS
+from dfdg.datasets.datasets import Digits
+from dfdg.datasets.datasets import OfficeHome
+from dfdg.datasets.datasets import miniDomainNet
+
+
+def get_dataset_stats(dataset):
+    image_mean = [0.485, 0.456, 0.406]
+    image_var = [0.229, 0.224, 0.225]
+    return image_mean, image_var
+
+
+def get_img_size(dataset):
+    dataset_size_mapping = {
+        'PACS': 224,
+        'VLCS': 224,
+        'OfficeHome': 224,
+        'Digits': 32,
+        'miniDomainNet': 96,
+    }
+    return dataset_size_mapping[dataset]
+
+
+def get_backbone(dataset):
+    backbone = None
+    if dataset == 'Digits':
+        backbone = 'resnet18'
+    else:
+        backbone = 'resnet50'
+    return backbone
+
+
+def get_dataset(dataset):
+    dataset_mapping = {
+        'PACS': PACS,
+        'VLCS': VLCS,
+        'OfficeHome': OfficeHome,
+        'Digits': Digits,
+        'miniDomainNet': miniDomainNet,
+    }
+    assert dataset in dataset_mapping.keys()
+    dataset_class = dataset_mapping[dataset]
+    return dataset_class
+
+
 def get_source_domains(dataset):
     if dataset == "PACS":
         return ["art_painting", "cartoon", "photo", "sketch"]
@@ -65,13 +117,23 @@ def get_class_number(dataset):
 
 def get_class_names(dataset):
     if dataset == "PACS":
-        return ["dog", "elephant", "giraffe", "guitar", "horse", "house", "person"]
+        return [
+            "dog",
+            "elephant",
+            "giraffe",
+            "guitar",
+            "horse",
+            "house",
+            "person",
+        ]
     elif dataset == "VLCS":
         return ["bird", "car", "chair", "dog", "person"]
     elif dataset == "OfficeHome":
-        classes = "Alarm Clock, Backpack, Batteries, Bed, Bike, Bottle, Bucket, Calculator, "\
-            "Calendar, Candles, Chair, Clipboards, Computer, Couch, Curtains, Desk Lamp, Drill, "\
+        classes = (
+            "Alarm Clock, Backpack, Batteries, Bed, Bike, Bottle, Bucket, Calculator, "
+            "Calendar, Candles, Chair, Clipboards, Computer, Couch, Curtains, Desk Lamp, Drill, "
             "Eraser, Exit Sign, Fan, File Cabinet, Flipflops, Flowers, Folder, Fork, Glasses, Hammer, ÄHelmet, Kettle, Keyboard, Knives, Lamp Shade, Laptop, Marker, Monitor, Mop, Mouse, Mug, Notebook, Oven, Pan, Paper Clip, Pen, Pencil, Postit Notes, Printer, Push Pin, Radio, Refrigerator, ruler, Scissors, Screwdriver, Shelf, Sink, Sneakers, Soda, Speaker, Spoon, Table, Telephone, Toothbrush, Toys, Trash Can, TV, Webcam"
+        )
         return [c.upper() for c in classes.split(", ")]
     elif dataset == "Digits":
         return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

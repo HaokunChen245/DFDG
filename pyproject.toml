@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "dfdg"
+version = "0.1.0"
+description = "Code for paper Towards Data-free Domain Generalization"
+authors = ["Haokun Chen"]
+license = "Apache v2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.8"
+torch = ">=1.13.0"
+torchvision = ">=0.11.2"
+gdown = ">=4.2.0"
+ray = ">=1.9.2"
+pandas = ">=1.3.5"
+tabulate = ">=0.8.9"
+tensorboardX = ">=1.9"
+scipy = ">=1.7.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

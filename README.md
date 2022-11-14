@@ -1,6 +1,6 @@
-# Towards Data-Free Domain Generalization
+# DFDG
 
-![Teaser image](assets/method.png)
+![Teaser image](docs/assets/method.png)
 
 This repo contains code for our paper:
 
@@ -9,31 +9,109 @@ This repo contains code for our paper:
 > LMU, Siemens<br>
 > ACML 2022
 
-### Getting Started
-Download the pretrained teacher models:
-```sh
-python ./datasets/teacher_download.py --root_dir=%TEACHER_DIR
+## Installation
+
+1.  OPTIONAL (but recommended): Create a virtual environment using Python's builtin [venv](https://docs.python.org/3/library/venv.html) ...
+
+    ```bash
+    $ python -m venv .venv
+    $ source .venv/bin/activate
+    ```
+
+    ... or [Conda](https://conda.io):
+
+    ```bash
+    $ conda create -n ENV_NAME python=X.Y
+    $ conda activate ENV_NAME
+    ```
+
+1.  Install Poetry and install dependencies:
+    ```bash
+    $ curl -sSL https://install.python-poetry.org | python3 -
+    $ poetry install
+    ```
+
+## Quickstart
+
+### Library
+
+```python
+from dfdg.download.dataset_download import download_dataset
+from dfdg.download.teacher_download import download_teacher
+from dfdg.training.train import train
+from dfdg.evaluation.evaluate import evaluate
+
+# Download dataset.
+download_dataset(DATASET_NAME, './data')
+
+# Download pretrained teacher models.
+download_teacher('./model')
+
+# Train a student model for each domain using the pretrained teacher models.
+student_dir = train(
+    dataset=DATASET_NAME,
+    dataset_dir='./data',
+    lr_img_stage1=0.1,
+    batch_size_stage1=128,
+    batch_num_stage1=2,
+    lambda_moment_stage1=1,
+    iterations_img_stage1=200,
+    slack_stage1=10,
+    lr_img_stage2=0.1,
+    batch_size_stage2=128,
+    batch_num_stage2=2,
+    lambda_moment_stage2=1,
+    iterations_img_stage2=200,
+    slack_stage2=10,
+    lr_student=0.1,
+    batch_size_student=256,
+    iterations_student=5,
+    model_dir='./models',
+    seed=1,
+)
+
+# Evaluate the student models.
+result = evaluate(
+    dataset=DATASET_NAME,
+    dataset_dir='./data',
+    model_dir='./models',
+    student_dir=student_dir,
+    batch_size=1024,
+)
+print(result)
 ```
 
-Download the datasets:
-```sh
-python ./datasets/dataset_download.py --dataset=%DATASET --data_dir=%DATASET_DIR
+### CLI
+
+1.  Download the dataset and the teacher models
+
+    ```bash
+    $ python -m dfdg dataset_download
+    $ python -m dfdg teacher_download
+    ```
+
+1.  Train a model:
+
+    ```bash
+    $ python -m dfdg train
+    ```
+
+1.  Evaluate a model:
+
+    ```bash
+    $ python -m dfdg evaluate
+    ```
+
+## Citation
+
+If you use our code in your research or wish to refer to the results published in our work, please cite our work with the following BibTeX entry.
+
+```
+@article{frikha2021towards,
+  title={Towards Data-Free Domain Generalization},
+  author={Frikha, Ahmed and Chen, Haokun and Krompa{\ss}, Denis and Runkler, Thomas and Tresp, Volker},
+  journal={arXiv preprint arXiv:2110.04545},
+  year={2021}
+}
 ```
 
-Prepare the intra-domain synthetic images:
-```sh
-python ray_imgs.py --dataset=%DATASET --log_snapdir=%LOG_DIR --dataset_dir=%DATASET_DIR --teacher_snapdir=%TEACHER_DIR --stage=1
-```
-
-Prepare the cross-domain synthetic images:
-```sh
-python ray_imgs.py --dataset=%DATASET --log_snapdir=%LOG_DIR --dataset_dir=%DATASET_DIR --stage1_snapdir=%STAGE1_DIR --teacher_snapdir=%TEACHER_DIR --stage=2
-```
-
-Training a generalized student via knowledge distillation:
-```sh
-python ray_student.py --dataset=%DATASET --log_snapdir=%LOG_DIR --dataset_dir=%DATASET_DIR --stage1_snapdir=%STAGE1_DIR  --stage2_snapdir=%STAGE2_DIR--teacher_snapdir=%TEACHER_DIR --image_snapdir=%IMAGE_DIR
-```
-
-### Results
-![Teaser image](assets/results.png)

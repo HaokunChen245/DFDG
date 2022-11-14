@@ -1,3 +1,9 @@
+'''
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import argparse
 import os
 import tarfile
@@ -64,38 +70,25 @@ def download_and_extract(url, dst, remove=True):
     if remove:
         os.remove(dst)
 
-def download_teacher(root_dir):
-    # Original URL: http://hemanthdv.org/OfficeHome-Dataset/
-    full_path = os.path.join(root_dir, "saved_models_teacher")
 
+def download_teacher(model_dir):
+    if len(model_dir) > 0 and not os.path.isdir(model_dir):
+        os.system(f'mkdir -p {model_dir}')
+
+    full_path = os.path.realpath(os.path.join(model_dir, "teacher_models"))
     if os.path.exists(full_path):
-        print("data folder exists already")
+        print("teacher model folder exists already")
         if len(os.listdir(full_path)) == 0:
-            print("data folder empty")
+            print("teacher model folder empty")
             download_and_extract(
                 "https://drive.google.com/uc?id=1vUG3QGr5Wfj8aguddgeaI2S-LkzniCz5",
-                os.path.join(root_dir, "teacher_models.zip"),
+                os.path.join(model_dir, "teacher_models.zip"),
             )
-
-            os.rename(os.path.join(
-                root_dir, "saved_models_teacher"), full_path)
+            os.rename(full_path.replace('teacher', 'teahcer'), full_path)
 
     else:
         download_and_extract(
             "https://drive.google.com/uc?id=1vUG3QGr5Wfj8aguddgeaI2S-LkzniCz5",
-            os.path.join(root_dir, "teacher_models.zip"),
+            os.path.join(model_dir, "teacher_models.zip"),
         )
-
-        os.rename(os.path.join(root_dir, "saved_models_teacher"), full_path)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download pretrained teacher models")
-    parser.add_argument("--root_dir", type=str, required=True)
-
-    args = parser.parse_args()
-
-    if len(args.root_dir)>0 and not os.path.isdir(args.root_dir):
-        os.system(f'mkdir -p {args.root_dir}')
-
-    download_teacher(args.root_dir)
+        os.rename(full_path.replace('teacher', 'teahcer'), full_path)

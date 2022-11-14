@@ -1,6 +1,97 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+
+
+def get_net(backbone, num_class, pretrained=False, load_path=None):
+    if backbone == "resnet18":
+        net = torchvision.models.resnet18(pretrained=pretrained)
+        net.fc = nn.Linear(512, num_class)
+    elif backbone == "resnet34":
+        net = torchvision.models.resnet34(pretrained=pretrained)
+        net.fc = nn.Linear(512, num_class)
+    elif backbone == "resnet50":
+        net = torchvision.models.resnet50(pretrained=pretrained)
+        net.fc = nn.Linear(2048, num_class)
+    elif backbone == "alexnet":
+        net = torchvision.models.alexnet(pretrained=pretrained)
+        cls = list(net.classifier[:-1]) + [nn.Linear(4096, num_class)]
+        net.classifier = nn.Sequential(*cls)
+
+    if load_path:
+        net.load_state_dict(torch.load(load_path))
+        net.eval()
+        for param in net.parameters():
+            param.requires_grad = False
+
+    return net
+
+
+def get_image_prior_losses(inputs_jit):
+    # COMPUTE total variation regularization loss
+    diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
+    diff2 = inputs_jit[:, :, :-1, :] - inputs_jit[:, :, 1:, :]
+    diff3 = inputs_jit[:, :, 1:, :-1] - inputs_jit[:, :, :-1, 1:]
+    diff4 = inputs_jit[:, :, :-1, :-1] - inputs_jit[:, :, 1:, 1:]
+
+    loss_var_l2 = (
+        torch.norm(diff1)
+        + torch.norm(diff2)
+        + torch.norm(diff3)
+        + torch.norm(diff4)
+    )
+    loss_var_l1 = (
+        (diff1.abs() / 255.0).mean()
+        + (diff2.abs() / 255.0).mean()
+        + (diff3.abs() / 255.0).mean()
+        + (diff4.abs() / 255.0).mean()
+    )
+    loss_var_l1 = loss_var_l1 * 255.0
+    return loss_var_l1, loss_var_l2
+
+
+def tv_loss(inputs_jit):
+    """
+    Compute total variation loss.
+    Inputs:
+    - img: PyTorch Variable of shape (1, 3, H, W) holding an input image.
+    - tv_weight: Scalar giving the weight w_t to use for the TV loss.
+    Returns:
+    - loss: PyTorch Variable holding a scalar giving the total variation loss
+      for img weighted by tv_weight.
+    """
+    diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
+    diff2 = inputs_jit[:, :, :-1, :] - inputs_jit[:, :, 1:, :]
+    diff3 = inputs_jit[:, :, 1:, :-1] - inputs_jit[:, :, :-1, 1:]
+    diff4 = inputs_jit[:, :, :-1, :-1] - inputs_jit[:, :, 1:, 1:]
+    loss_var = (
+        torch.norm(diff1)
+        + torch.norm(diff2)
+        + torch.norm(diff3)
+        + torch.norm(diff4)
+    )
+    return loss_var
+
+
+def kl_loss(y, teacher_scores, temp=3, softmax_applied=False):
+    p = F.log_softmax(y / temp, dim=1)
+
+    if softmax_applied:
+        q = teacher_scores
+    else:
+        q = F.softmax(teacher_scores / temp, dim=1)
+
+    l_kl = F.kl_div(p, q, reduction="batchmean")
+    l_kl = l_kl * temp**2
+    return l_kl
 
 
 class DeepInversionFeatureHook_wDiversify:
@@ -48,8 +139,12 @@ class DeepInversionFeatureHook_wDiversify:
         self.compute_slackness()
 
     def compute_slackness(self):
-        diff_mean = torch.abs(self.target_mean.data.to("cuda:0") - self.base_mean).cpu()
-        diff_var = torch.abs(self.target_var.data.to("cuda:0") - self.base_var).cpu()
+        diff_mean = torch.abs(
+            self.target_mean.data.to("cuda:0") - self.base_mean
+        ).cpu()
+        diff_var = torch.abs(
+            self.target_var.data.to("cuda:0") - self.base_var
+        ).cpu()
         if not self.use_tensor_in_slack:
             # use percentile of the calculated diff values.
             mean_slack = np.percentile(diff_mean, self.perc)
@@ -103,18 +198,24 @@ class DeepInversionFeatureHook_wDiversify:
 
         r_feature = torch.norm(
             self.target_var.data.type(var.type()).to("cuda:0") - var, 2
-        ) + torch.norm(self.target_mean.data.type(mean.type()).to("cuda:0") - mean, 2)
+        ) + torch.norm(
+            self.target_mean.data.type(mean.type()).to("cuda:0") - mean, 2
+        )
         self.r_feature = r_feature
 
         if self.perc == 0:
             self.r_feature_slacked = self.r_feature
         else:
             diff_mean = (
-                torch.abs(self.target_mean.data.type(mean.type()).to("cuda:0") - mean)
+                torch.abs(
+                    self.target_mean.data.type(mean.type()).to("cuda:0") - mean
+                )
                 - self.mean_slack
             )
             diff_var = (
-                torch.abs(self.target_var.data.type(var.type()).to("cuda:0") - var)
+                torch.abs(
+                    self.target_var.data.type(var.type()).to("cuda:0") - var
+                )
                 - self.var_slack
             )
 
@@ -122,7 +223,8 @@ class DeepInversionFeatureHook_wDiversify:
             zeros_var = torch.zeros(diff_var.shape)
 
             r_feature_slacked = torch.norm(
-                torch.where(diff_mean < 0, zeros_mean.to("cuda:0"), diff_mean), 2
+                torch.where(diff_mean < 0, zeros_mean.to("cuda:0"), diff_mean),
+                2,
             ) + torch.norm(
                 torch.where(diff_var < 0, zeros_var.to("cuda:0"), diff_var), 2
             )
@@ -140,7 +242,9 @@ class DeepInversionFeatureHook_wDiversify:
 
 
 def print_moment_loss(T, loss_r_feature_layers, cmd=True):
-    loss_moment = sum([m.r_feature for (idx, m) in enumerate(loss_r_feature_layers)])
+    loss_moment = sum(
+        [m.r_feature for (idx, m) in enumerate(loss_r_feature_layers)]
+    )
     ma = get_map(T)
     out = [0, 0, 0, 0, 0]
     for idx, m in enumerate(loss_r_feature_layers):
@@ -176,3 +280,28 @@ def get_map(T):
             count += 1
             m[count] = 4
     return m
+
+
+def lr_policy(lr_fn):
+    def _alr(optimizer, epoch):
+        lr = lr_fn(epoch)
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+        return lr
+
+    return _alr
+
+
+def lr_cosine_policy(base_lr, warmup_length, epochs):
+    def _lr_fn(epoch):
+        if epoch < warmup_length:
+            lr = base_lr * (epoch + 1) / warmup_length
+        else:
+            e = epoch - warmup_length
+            es = epochs - warmup_length
+            lr = 0.5 * (1 + np.cos(np.pi * e / es)) * base_lr
+            if lr < base_lr * 0.01:
+                lr = base_lr * 0.01
+        return lr
+
+    return lr_policy(_lr_fn)

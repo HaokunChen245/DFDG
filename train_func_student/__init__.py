@@ -1,3 +1,0 @@
-from train_func_student.train_func_student_image import train_one_setting_student_image
-
-

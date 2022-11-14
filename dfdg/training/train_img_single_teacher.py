@@ -1,40 +1,43 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import os
 
 import torch
 import torch.nn as nn
 import yaml
 
-from train_func_image.train_func_imgs_base import train_one_batch
-from utils.feature_matching import DeepInversionFeatureHook_wDiversify, get_map
-from utils.utils import get_net, setup_seed, trial_name_string
+from dfdg.training.train_img_base import train_img_base
+from dfdg.training.utils import DeepInversionFeatureHook_wDiversify
+from dfdg.training.utils import get_map
+from dfdg.training.utils import get_net
+from dfdg.datasets.utils import get_dataset_stats
+from dfdg.utils import trial_name_string
 
 
-def train_one_setting_single_teacher(config):
-    setup_seed(config["trial_seed"])
+def train_img_single_teacher(config):
     config["device"] = torch.device("cuda:0")
+    image_mean, image_var = get_dataset_stats(config['dataset'])
 
-    image_mean = [0.485, 0.456, 0.406]
-    image_var = [0.229, 0.224, 0.225]
-
-    source_domains = config["source_domains"]
-    source_domains.remove(config["source_domain_A"])
-
-    config["trial_name"] = trial_name_string(config)
     config["image_snapshot_dir"] = os.path.join(
         config["log_root_dir"], config["log_run_name"], config["trial_name"]
     )
     if not os.path.isdir(config["image_snapshot_dir"]):
         os.system(f"mkdir -p {config['image_snapshot_dir']}")
     with open(
-        os.path.join(config['image_snapshot_dir'],
-        "images_generation_setting.yml")
-        , "w"
+        os.path.join(
+            config['image_snapshot_dir'], "images_generation_setting.yml"
+        ),
+        "w",
     ) as f:
         yaml.dump(config, f)
 
     ini_cls = list(range(config["num_class"]))
 
-    for b in range(config["batch_numbers"]):
+    for b in range(config["batch_num"]):
         # label saving
         tmp = (b * config["batch_size"]) % config["num_class"]
         cls = ini_cls[tmp:] + ini_cls[:tmp]
@@ -43,11 +46,15 @@ def train_one_setting_single_teacher(config):
             + cls[: config["batch_size"] % config["num_class"]]
         ).view((config["batch_size"], 1))
         torch.save(
-            y_label, os.path.join(config["image_snapshot_dir"], f"labels_{b}.pt")
+            y_label,
+            os.path.join(
+                config["image_snapshot_dir"],
+                f"labels_{config['source_domain_A']}_{b}.pt",
+            ),
         )
 
         teacher_snapshot_dir = os.path.join(
-            config["teacher_snapdir"],
+            config["teacher_dir"],
             f'{config["source_domain_A"]}_{config["teacher_backbone"]}',
             "model_best.pth",
         )
@@ -80,14 +87,11 @@ def train_one_setting_single_teacher(config):
                         layer_index=layer_mapping[count],
                         cross_domain_generation=False,
                         use_slack=config["slack"],
-                        more_slack_1st_var=config["more_slack_1st_var"],
+                        more_slack_1st_var=True,
                         use_tensor_in_slack=False,
                     )
                 )
-                if count == 0:
-                    rescale.append(config["scale_1BN"])
-                else:
-                    rescale.append(1.0)
+                rescale.append(1.0)
 
         for l in loss_r_feature_layers:
             l.computing_base_stats = True
@@ -109,15 +113,21 @@ def train_one_setting_single_teacher(config):
             for i in range(3):
                 inputs_v = (
                     torch.ones(
-                        (config["batch_size"], config["img_size"], config["img_size"])
+                        (
+                            config["batch_size"],
+                            config["img_size"],
+                            config["img_size"],
+                        )
                     )
                     * imgs_init_var[i]
                 )
-                inputs.append(torch.normal(mean=imgs_init_mean[i], std=inputs_v))
+                inputs.append(
+                    torch.normal(mean=imgs_init_mean[i], std=inputs_v)
+                )
             inputs = torch.stack(inputs, 1).to(config["device"])
             inputs = torch.clamp(inputs, min=0, max=1)
 
-        train_one_batch(
+        train_img_base(
             config,
             inputs,
             y_label,

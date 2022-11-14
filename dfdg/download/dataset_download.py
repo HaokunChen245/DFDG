@@ -1,3 +1,9 @@
+'''
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import argparse
 import json
 import os
@@ -450,32 +456,24 @@ def download_mini_domain_net(data_dir):
             os.path.join(data_dir, "miniDomainNet.zip"),
         )
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download datasets")
-    parser.add_argument("--data_dir", type=str, required=True)
-    parser.add_argument("--dataset", type=str, required=True)
-
-    args = parser.parse_args()
-
-    if len(args.data_dir)>0 and not os.path.isdir(args.data_dir):
-        os.system("mkdir -p {}".format(args.data_dir))
-
-    if args.dataset == "MNIST":
-        download_mnist(args.data_dir)
-    elif args.dataset == "Digits":
-        download_digits(args.data_dir)
-    elif args.dataset == "PACS":
-        download_pacs(args.data_dir)
-    elif args.dataset == "OfficeHome":
-        download_office_home(args.data_dir)
-    elif args.dataset == "DomainNet":
-        download_domain_net(args.data_dir)
-    elif args.dataset == "miniDomainNet":
-        download_mini_domain_net(args.data_dir)
-    elif args.dataset == "VLCS":
+def download_dataset(dataset, data_dir='./data'):
+    if len(data_dir)>0 and not os.path.isdir(data_dir):
+        os.system("mkdir -p {}".format(data_dir))
+    if dataset == "MNIST":
+        download_mnist(data_dir)
+    elif dataset == "Digits":
+        download_digits(data_dir)
+    elif dataset == "PACS":
+        download_pacs(data_dir)
+    elif dataset == "OfficeHome":
+        download_office_home(data_dir)
+    elif dataset == "DomainNet":
+        download_domain_net(data_dir)
+    elif dataset == "miniDomainNet":
+        download_mini_domain_net(data_dir)
+    elif dataset == "VLCS":
         try:
-            download_vlcs(args.data_dir)
+            download_vlcs(data_dir)
         except:
             print("using slow download ##########")
-            download_vlcs_slow(args.data_dir)
+            download_vlcs_slow(data_dir)

@@ -1,12 +1,22 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import os
 import random
 
 import torch
 import torchvision.transforms as tfs
-from PIL import Image, ImageFile
+from PIL import Image
+from PIL import ImageFile
 from torch.utils import data
-from torch.utils.data import ConcatDataset, random_split
-from torchvision.datasets import MNIST, SVHN, USPS
+from torch.utils.data import ConcatDataset
+from torch.utils.data import random_split
+from torchvision.datasets import MNIST
+from torchvision.datasets import SVHN
+from torchvision.datasets import USPS
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 class BaseDataset(data.Dataset):
@@ -15,6 +25,7 @@ class BaseDataset(data.Dataset):
         self.imgs = []
         self.domain = domain
         self.mode = mode
+        self.img_size = img_size
         if mode == "test" or mode == "val":
             self.transforms = tfs.Compose(
                 [

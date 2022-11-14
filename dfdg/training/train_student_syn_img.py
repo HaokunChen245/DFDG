@@ -1,46 +1,46 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import os
 
 import torch
 import torch.nn.functional as F
 import yaml
+from dfdg.datasets.syn_datasets import FAKE
+from dfdg.datasets.utils import get_dataset
 from ray import tune
 from torch.utils.data import ConcatDataset
-from datasets import FAKE, PACS, VLCS, Digits, OfficeHome, miniDomainNet
-from utils.dataset_utils import get_class_number, get_source_domains
-from utils.losses import kl_loss
-from utils.utils import (evaluate, get_net, lr_cosine_policy, setup_seed,
-                         trial_name_string)
+
+from dfdg.datasets.utils import get_class_number
+from dfdg.datasets.utils import get_source_domains
+from dfdg.evaluation.utils import evaluate_oneset
+from dfdg.training.utils import get_net
+from dfdg.training.utils import kl_loss
+from dfdg.training.utils import lr_cosine_policy
+from dfdg.utils import trial_name_string
 
 
-def train_one_setting_student_image(config):
+def train_student_syn_img(config):
     config["folder_dicts"] = [
         {
-            "folder_name": config['stage1_snapdir'],
+            "folder_name": config['img_dir_stage1'],
             "batch_nr": -1,
-            "mode": "DI",
+            "mode": "stage1",
             "augment": True,
             "select": True,
         },
         {
-            "folder_name": config['stage2_snapdir'],
+            "folder_name": config['img_dir_stage2'],
             "batch_nr": -1,
-            "mode": "adabn",
+            "mode": "stage2",
             "augment": True,
             "select": True,
         },
     ]
-
-    config["trial_name"] = trial_name_string(config)
-    setup_seed(config["trial_seed"])
-    dataset_mapping = {
-        "PACS": PACS,
-        "VLCS": VLCS,
-        "OfficeHome": OfficeHome,
-        "Digits": Digits,
-        "miniDomainNet": miniDomainNet,
-    }
-    assert config["dataset"] in dataset_mapping.keys()
-    dataset = dataset_mapping[config["dataset"]]
+    dataset = get_dataset(config["dataset"])
 
     # for fake image: we only use the validation set of target domain as model selection
     valset = dataset(
@@ -51,7 +51,7 @@ def train_one_setting_student_image(config):
     )
     valset_loader = torch.utils.data.DataLoader(
         dataset=valset,
-        batch_size=config["eval_batch_size"],
+        batch_size=config["batch_size"],
         collate_fn=valset.collate_fn,
     )
 
@@ -63,7 +63,9 @@ def train_one_setting_student_image(config):
         for f in config["folder_dicts"]:
             if not f["select"]:
                 continue
-            current_folder_name = f["folder_name"].replace("domain", source_domain_a)
+            current_folder_name = f["folder_name"].replace(
+                "domain", source_domain_a
+            )
             trainset = FAKE(
                 dataset=config["dataset"],
                 source_domain_a=source_domain_a,
@@ -84,7 +86,9 @@ def train_one_setting_student_image(config):
     )
 
     #########Here start from ImageNet pretrained network.##################
-    net = get_net(config["teacher_backbone"], config["num_class"], pretrained=True)
+    net = get_net(
+        config["teacher_backbone"], config["num_class"], pretrained=True
+    )
     net = net.cuda().train()
 
     #########See whether to fix bn statistics###########
@@ -93,10 +97,12 @@ def train_one_setting_student_image(config):
     student_folder_dir = os.path.join(
         config["log_root_dir"], config["log_run_name"], config["trial_name"]
     )
-    with open(os.path.join(student_folder_dir, "fake_images_folders_setting.yml"), "w") as f:
+    with open(
+        os.path.join(student_folder_dir, "fake_images_folders_setting.yml"), "w"
+    ) as f:
         yaml.dump_all(config["folder_dicts"], f)
 
-    max_ep = config["max_iters_train"]
+    max_ep = config["iterations"]
     optimizer = torch.optim.SGD(
         net.parameters(),
         weight_decay=0.0005,
@@ -106,7 +112,7 @@ def train_one_setting_student_image(config):
     )
     #     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [int(max_ep*0.6), int(max_ep*0.8)], gamma=0.9)
     lr_scheduler = lr_cosine_policy(
-        config["lr"], 100, config["max_iters_train"] * len(trainset_loader)
+        config["lr"], 100, config["iterations"] * len(trainset_loader)
     )
     it = 0
     temperature = 3
@@ -121,7 +127,7 @@ def train_one_setting_student_image(config):
             teacher.load_state_dict(
                 torch.load(
                     os.path.join(
-                        config["teacher_snapdir"],
+                        config["teacher_dir"],
                         f"{d}_{config['teacher_backbone']}",
                         "model_best.pth",
                     )
@@ -130,8 +136,6 @@ def train_one_setting_student_image(config):
             teacher.eval().cuda()  # for evaluation
             teachers.append(teacher)
 
-    cur_trial_best = 0
-    best_it = 0
     for ep in range(max_ep):
         for (imgs, _, index_ts) in trainset_loader:
             it += 1
@@ -148,14 +152,18 @@ def train_one_setting_student_image(config):
                         logit = teacher(imgs)
                         logits.append(logit)
                     else:
-                        logits.append(torch.zeros((imgs.shape[0], num_cls)).cuda())
+                        logits.append(
+                            torch.zeros((imgs.shape[0], num_cls)).cuda()
+                        )
 
                 logits = torch.stack(logits, 1)
                 logits = F.softmax(logits / temperature, dim=2)
                 targets = index_ts @ logits
                 targets = targets.squeeze()
 
-            l_kl = kl_loss(outputs, targets, temp=temperature, softmax_applied=True)
+            l_kl = kl_loss(
+                outputs, targets, temp=temperature, softmax_applied=True
+            )
 
             l_kl.backward()
             optimizer.step()
@@ -165,39 +173,51 @@ def train_one_setting_student_image(config):
             )
             #         scheduler.step()
 
-            if it % 20 == 0:
-
-                val_acc = evaluate(net, valset_loader)
-                tune.report(acc=float(val_acc))
-                if not os.path.exists(os.path.join(student_folder_dir, "best_acc.pt")):
-                    torch.save(
-                        net.state_dict(),
-                        os.path.join(student_folder_dir, "model_best.pth"),
+        val_acc = evaluate_oneset(net, valset_loader)
+        tune.report(acc=float(val_acc))
+        if not os.path.exists(
+            os.path.join(
+                student_folder_dir,
+                f"best_{config['target_domain']}_acc.pt",
+            )
+        ):
+            torch.save(
+                net.state_dict(),
+                os.path.join(
+                    student_folder_dir,
+                    f"model_{config['target_domain']}_best.pth",
+                ),
+            )
+            torch.save(
+                torch.Tensor([val_acc]),
+                os.path.join(
+                    student_folder_dir,
+                    f"best_{config['target_domain']}_acc.pt",
+                ),
+            )
+            best = float(val_acc)
+        else:
+            best = float(
+                torch.load(
+                    os.path.join(
+                        student_folder_dir,
+                        f"best_{config['target_domain']}_acc.pt",
                     )
-                    torch.save(
-                        torch.Tensor([val_acc]),
-                        os.path.join(student_folder_dir, "best_acc.pt"),
-                    )
-                    best = float(val_acc)
-                else:
-                    best = float(
-                        torch.load(os.path.join(student_folder_dir, "best_acc.pt"))
-                    )
-                    if best < float(val_acc):
-                        torch.save(
-                            torch.Tensor([val_acc]),
-                            os.path.join(student_folder_dir, "best_acc.pt"),
-                        )
-                        torch.save(
-                            net.state_dict(),
-                            os.path.join(student_folder_dir, "model_best.pth"),
-                        )
-                        best = val_acc
-
-                if cur_trial_best < val_acc:
-                    cur_trial_best = max(val_acc, cur_trial_best)
-                    best_it = it
-
-                if val_acc < cur_trial_best and it - best_it >= 300 and ep >= 8:
-                    tune.report(done=True)
-                    return
+                )
+            )
+            if best < float(val_acc):
+                torch.save(
+                    torch.Tensor([val_acc]),
+                    os.path.join(
+                        student_folder_dir,
+                        f"best_{config['target_domain']}_acc.pt",
+                    ),
+                )
+                torch.save(
+                    net.state_dict(),
+                    os.path.join(
+                        student_folder_dir,
+                        f"model_{config['target_domain']}_best.pth",
+                    ),
+                )
+                best = val_acc

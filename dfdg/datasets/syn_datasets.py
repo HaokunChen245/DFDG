@@ -1,15 +1,22 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import os
 
 import torch
 import torch.utils.data as data
 import torchvision.transforms as tfs
-
-from utils.dataset_utils import (get_abbr_map, get_class_names,
-                                 get_source_domains_abbr)
+from dfdg.datasets.utils import get_abbr_map
+from dfdg.datasets.utils import get_class_names
+from dfdg.datasets.utils import get_source_domains_abbr
 
 
 class FAKE(data.Dataset):
-    ''' Dataset for synthetic images '''
+    '''Dataset for synthetic images'''
+
     def __init__(
         self,
         dataset,
@@ -40,7 +47,8 @@ class FAKE(data.Dataset):
                         tfs.ColorJitter(0.3, 0.3, 0.3, 0.3),
                         tfs.RandomGrayscale(),
                         tfs.Normalize(
-                            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                            mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225],
                         ),
                     ]
                 )
@@ -52,7 +60,8 @@ class FAKE(data.Dataset):
                         tfs.ColorJitter(0.3, 0.3, 0.3, 0.3),
                         tfs.RandomGrayscale(),
                         tfs.Normalize(
-                            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                            mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225],
                         ),
                     ]
                 )
@@ -78,7 +87,7 @@ class FAKE(data.Dataset):
         else:
             abbr_target = "----"
 
-        if "adabn" in mode:
+        if "stage2" in mode:
             # setting is adabn with multiple teacher,
             # and here the logits are calculated using the teacher from source B.
             # loading all images in that image folder
@@ -86,14 +95,19 @@ class FAKE(data.Dataset):
             for f in os.listdir(self.image_folder_dir):
                 if not ".pt" in f or not "img" in f:
                     continue
+                if source_domain_a != f.split("_")[1]:
+                    continue
                 if abbr_target in f or (target_domain and target_domain in f):
                     continue
 
                 img_batch = torch.load(os.path.join(self.image_folder_dir, f))
                 label_batch = torch.load(
-                    os.path.join(self.image_folder_dir, f.replace("img", "label"))
+                    os.path.join(
+                        self.image_folder_dir, f.replace("img", "label")
+                    )
                 )
-                source_domain_b = f.split("_")[1]
+
+                source_domain_b = f.split("_")[2]
 
                 temp = torch.Tensor([0, 0, 0, 0])
                 # every teacher logits takes weight of 0.5
@@ -106,7 +120,7 @@ class FAKE(data.Dataset):
                     self.labels.append(int(label_batch[i]))
                     self.index_teachers.append(temp)
 
-        elif "DI" in mode:
+        elif "stage1" in mode:
             # loading all images in that image folder
             temp = torch.Tensor([0, 0, 0, 0])
             # the only teacher takes 1
@@ -115,9 +129,13 @@ class FAKE(data.Dataset):
             for f in os.listdir(self.image_folder_dir):
                 if not ".pt" in f or not "img" in f:
                     continue
+                if source_domain_a != f.split("_")[1]:
+                    continue
                 img_batch = torch.load(os.path.join(self.image_folder_dir, f))
                 label_batch = torch.load(
-                    os.path.join(self.image_folder_dir, f.replace("img", "label"))
+                    os.path.join(
+                        self.image_folder_dir, f.replace("img", "label")
+                    )
                 )
 
                 for i in range(img_batch.shape[0]):
@@ -143,7 +161,11 @@ class FAKE(data.Dataset):
             img = img_batch[self.imgs[index][1]]
             img = self.transforms(img)
             del img_batch
-        return img, torch.LongTensor([self.labels[index]]), self.index_teachers[index]
+        return (
+            img,
+            torch.LongTensor([self.labels[index]]),
+            self.index_teachers[index],
+        )
 
     def __len__(self):
         return len(self.imgs)

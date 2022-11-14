@@ -1,18 +1,27 @@
+''' 
+@copyright Copyright (c) Siemens AG, 2022
+@author Haokun Chen <haokun.chen@siemens.com>
+SPDX-License-Identifier: Apache-2.0
+'''
+
 import os
 import random
 
 import torch
-from torch import nn
 import torchvision
 import torchvision.transforms as tfs
 from ray import tune
-from utils.dataset_utils import get_class_number
-from utils.feature_matching import print_moment_loss
-from utils.losses import get_image_prior_losses
-from utils.utils import evaluate_onebatch, lr_cosine_policy
+from torch import nn
+
+from dfdg.datasets.utils import get_class_number
+from dfdg.evaluation.utils import evaluate_onebatch
+from dfdg.training.utils import get_image_prior_losses
+from dfdg.datasets.utils import get_dataset_stats
+from dfdg.training.utils import lr_cosine_policy
+from dfdg.training.utils import print_moment_loss
 
 
-def train_one_batch(
+def train_img_base(
     config,
     inputs,
     y_label,
@@ -23,7 +32,7 @@ def train_one_batch(
     t_source_b=None,
 ):
     lambda_ce = 1
-    lambda_s = config["Ws"]
+    lambda_s = config["lambda_moment"]
     lambda_l2 = 1.5 * 1e-5
     lambda_t = 1e-4
 
@@ -32,8 +41,7 @@ def train_one_batch(
     tot_it = -1
     t_source_b_acc = -1
 
-    image_mean = [0.485, 0.456, 0.406]
-    image_var = [0.229, 0.224, 0.225]
+    image_mean, image_var = get_dataset_stats(config['dataset'])
     norm = tfs.Normalize(mean=image_mean, std=image_var)
 
     save_nrow = get_class_number(config["dataset"])
@@ -43,17 +51,18 @@ def train_one_batch(
     cls_criterion = nn.CrossEntropyLoss()
     random_erasing = tfs.RandomErasing(value=0, p=0.5)
     pooling_function = nn.modules.pooling.AvgPool2d(kernel_size=2)
+    config["multi_resolution"] = False
 
     inputs = inputs.requires_grad_(True)
 
-    iters_low_res = int(config["max_iters_train"] * 0.65)
-    iters_high_res = int(config["max_iters_train"] * 0.35)
+    iters_low_res = int(config["iterations"] * 0.65)
+    iters_high_res = int(config["iterations"] * 0.35)
 
     if not config["multi_resolution"]:
         optimizer = torch.optim.Adam(
             [inputs], lr=config["lr"], betas=[0.9, 0.99], eps=1e-8
         )
-        lr_scheduler = lr_cosine_policy(config["lr"], 100, config["max_iters_train"])
+        lr_scheduler = lr_cosine_policy(config["lr"], 100, config["iterations"])
 
     for res in [2, 1]:
         if res == 2:
@@ -74,9 +83,7 @@ def train_one_batch(
                 if res == 2:
                     cur_lr = lr_scheduler(optimizer, it)
                 else:
-                    cur_lr = lr_scheduler(
-                        optimizer, it + iters_low_res
-                    )
+                    cur_lr = lr_scheduler(optimizer, it + iters_low_res)
 
             tot_it += 1
             if config["dataset"] == "Digits":
@@ -123,11 +130,15 @@ def train_one_batch(
 
             # use KL instead of two CE loss, Teacher_A as the target logits
             # loss_CE = kl_loss(logits_b, logits_a, temp=3, softmax_applied=False)
-            loss_ce = cls_criterion(logits_a, y_label.squeeze().to(config["device"]))
+            loss_ce = cls_criterion(
+                logits_a, y_label.squeeze().to(config["device"])
+            )
             if t_source_b:
                 cls_criterion(logits_b, y_label.squeeze().to(config["device"]))
 
-            loss = lambda_t * loss_tv + lambda_l2 * loss_l2 + lambda_ce * loss_ce
+            loss = (
+                lambda_t * loss_tv + lambda_l2 * loss_l2 + lambda_ce * loss_ce
+            )
 
             # moment matching loss
             loss_moment = sum(
@@ -172,7 +183,9 @@ def train_one_batch(
                     l2Loss=float(loss_l2),
                     CELoss=float(loss_ce),
                     loss=float(loss),
-                    first_BN_mean_diff=float(loss_r_feature_layers[0].diff_mean),
+                    first_BN_mean_diff=float(
+                        loss_r_feature_layers[0].diff_mean
+                    ),
                     first_BN_var_diff=float(loss_r_feature_layers[0].diff_var),
                     first_BN_mLoss=float(moment_loss_per_layer[0]),
                     layer0_mLoss=float(moment_loss_per_layer[1]),
@@ -192,7 +205,7 @@ def train_one_batch(
                         inputs,
                         os.path.join(
                             config["image_snapshot_dir"],
-                            f'imgs_{config["source_domain_B"]}_{batch_count}.jpg',
+                            f'imgs_{config["source_domain_A"]}_{config["source_domain_B"]}_{batch_count}.jpg',
                         ),
                         nrow=save_nrow,
                     )
@@ -200,7 +213,8 @@ def train_one_batch(
                     torchvision.utils.save_image(
                         inputs,
                         os.path.join(
-                            config["image_snapshot_dir"], f"imgs_{batch_count}.jpg"
+                            config["image_snapshot_dir"],
+                            f"imgs_{config['source_domain_A']}_{batch_count}.jpg",
                         ),
                         nrow=save_nrow,
                     )
@@ -212,14 +226,15 @@ def train_one_batch(
                         inputs,
                         os.path.join(
                             config["image_snapshot_dir"],
-                            f'imgs_{config["source_domain_B"]}_{batch_count}.pt',
+                            f'imgs_{config["source_domain_A"]}_{config["source_domain_B"]}_{batch_count}.pt',
                         ),
                     )
                 else:
                     torch.save(
                         inputs,
                         os.path.join(
-                            config["image_snapshot_dir"], f"imgs_{batch_count}.pt"
+                            config["image_snapshot_dir"],
+                            f"imgs_{config['source_domain_A']}_{batch_count}.pt",
                         ),
                     )
 

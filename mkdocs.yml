@@ -1,0 +1,46 @@
+site_name: dfdg
+site_description: Data-Free Domain Generalization
+site_author: Haokun Chen
+
+repo_url: https://code.siemens.com/micore/dfdg
+edit_uri: edit/master/docs/
+
+copyright: "Copyright &copy; 2022 Siemens AG"
+
+nav:
+  - Documentation:
+      - Quickstart: index.md
+
+theme:
+  name: code-siemens-code-docs-theme
+  palette:
+    primary: teal
+    accent: teal
+  language: en
+  favicon: assets/images/favicon.png
+  feature:
+    tabs: true
+  logo:
+    icon: '\uE80C'
+
+extra:
+  community:
+    community_button_headline: Any questions left?
+    community_button_text: Create an issue
+    community_button_default_href: https://code.siemens.com/micore/dfdg/issues
+  links:
+    - name: code
+      value: https://code.siemens.com/micore/dfdg
+    - name: issues
+      value: https://code.siemens.com/micore/dfdg/issues
+
+markdown_extensions:
+  - pymdownx.emoji:
+      emoji_generator: !!python/name:pymdownx.emoji.to_svg
+  - pymdownx.highlight:
+      guess_lang: true
+  - pymdownx.snippets:
+      base_path: ./docs
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tasklist
