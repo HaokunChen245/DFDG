@@ -1,4 +1,4 @@
-# DFDG
+# DFDG (Data-Free Domain Generalization)
 
 ![Teaser image](docs/assets/method.png)
 
